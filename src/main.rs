@@ -1,32 +1,45 @@
+use bio::io::fasta;
 use clap::Clap;
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::{fs, io};
 
 #[derive(Clap)]
 struct Opts {
-    // Uncompressed [g]VCF file/pipe [omit or - for standard input]
+    // Reference genome uncompressed FASTA
+    #[clap(short, long)]
+    pub ref_fasta: String,
+
+    // Uncompressed gVCF file/pipe [omit or - for standard input]
     #[clap(default_value = "-")]
-    pub input_filename: String,
+    pub gvcf: String,
 }
 
-// read gvcf into vector chromosome-by-chromosome
-// normalize variant records; add INFO field to indicate gvcf_norm_originalPOS=
-// ignore reference bands
-// sort chromosome and emit
 fn main() {
     let opts = Opts::parse();
 
-    if opts.input_filename == "-" && atty::is(atty::Stream::Stdin) {
+    if opts.gvcf == "-" && atty::is(atty::Stream::Stdin) {
         panic!("pipe in data or supply input filename")
     }
 
-    let (_, _, mut last_records) = fold_tsv(
-        process_line,
-        (vec![], String::from(""), vec![]),
-        &opts.input_filename,
+    let ref_genome = read_ref_fasta(&opts.ref_fasta).unwrap();
+
+    let (_, _, _, mut last_records) = fold_tsv(
+        process_gvcf_line,
+        (&ref_genome, vec![], String::from(""), vec![]),
+        &opts.gvcf,
     )
     .unwrap();
     emit(&mut last_records)
+}
+
+fn read_ref_fasta(filename: &str) -> Result<HashMap<String, bio::io::fasta::Record>, io::Error> {
+    let mut ans = HashMap::new();
+    let mut reader = fasta::Reader::new(fs::File::open(filename)?).records();
+    while let Some(Ok(record)) = reader.next() {
+        ans.insert(String::from(record.id()), record);
+    }
+    return Ok(ans);
 }
 
 /// Fold over tab-separated lines of the file or standard input.
@@ -51,18 +64,28 @@ where
     Ok(x)
 }
 
-fn process_line(
+fn process_gvcf_line<'a>(
     line_num: usize,
-    state: (Vec<String>, String, Vec<(u64, String)>),
+    state: (
+        &'a HashMap<String, bio::io::fasta::Record>,
+        Vec<String>,
+        String,
+        Vec<(u64, String)>,
+    ),
     fields: &Vec<&str>,
-) -> (Vec<String>, String, Vec<(u64, String)>) {
-    let (mut header, mut chrom, mut chrom_records) = state;
+) -> (
+    &'a HashMap<String, bio::io::fasta::Record>,
+    Vec<String>,
+    String,
+    Vec<(u64, String)>,
+) {
+    let (ref_genome, mut header, mut chrom, mut chrom_records) = state;
     if !fields.is_empty() && fields[0].chars().nth(0) == Some('#') {
         if chrom.len() > 0 {
             panic!("gvcf_norm: out-of-place header line {}", line_num)
         }
         header.push(fields.join("\t"));
-        return (header, chrom, chrom_records);
+        return (ref_genome, header, chrom, chrom_records);
     } else if header.is_empty() {
         panic!("gvcf_norm: no header found; check input is uncompressed")
     }
@@ -80,11 +103,9 @@ fn process_line(
         chrom_records.clear();
         chrom = String::from(fields[0])
     }
-    let pos = fields[1].parse::<u64>().unwrap();
 
-    // TODO actually realign
-    chrom_records.push((pos, fields.join("\t")));
-    return (header, chrom, chrom_records);
+    chrom_records.push(normalize_gvcf_record(ref_genome, line_num, fields));
+    return (ref_genome, header, chrom, chrom_records);
 }
 
 fn emit(records: &mut Vec<(u64, String)>) {
@@ -93,4 +114,17 @@ fn emit(records: &mut Vec<(u64, String)>) {
     for (_, line) in records.iter() {
         println!("{}", line)
     }
+}
+
+fn normalize_gvcf_record(
+    ref_genome: &HashMap<String, bio::io::fasta::Record>,
+    line_num: usize,
+    fields: &Vec<&str>,
+) -> (u64, String) {
+    let original_pos = fields[1].parse::<u64>().unwrap();
+
+    // normalize variant records; add INFO field to indicate gvcf_norm_originalPOS=
+    // ignore reference bands
+
+    return (original_pos, fields.join("\t"));
 }
