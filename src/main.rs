@@ -73,7 +73,7 @@ fn process_gvcf_line<'a>(
     Vec<(u64, String)>,
 ) {
     let (ref_fasta, mut header, mut chrom, mut chrom_seq, mut chrom_records) = state;
-    if !fields.is_empty() && fields[0].chars().nth(0) == Some('#') {
+    if !fields.is_empty() && fields[0].chars().next() == Some('#') {
         if chrom.len() > 0 {
             panic!("gvcf_norm: out-of-place header line {}", line_num)
         }
@@ -115,9 +115,9 @@ fn process_gvcf_line<'a>(
 fn emit(records: &mut Vec<(u64, String)>) {
     // sort records by pos, then write them to standard output
     // why not just println!()? https://github.com/rust-lang/rust/issues/60673
+    records.sort();
     let io_stdout = io::stdout();
     let mut stdout = io::BufWriter::new(io_stdout);
-    records.sort();
     for (_, line) in records.iter() {
         writeln!(stdout, "{}", line).expect("gvcf_norm: unable to write standard output")
     }
@@ -142,8 +142,8 @@ fn normalize_gvcf_record(
             line_num, chrom
         );
     }
+    // skip if REF allele has ambiguous characters
     for ch in alleles[0].iter() {
-        // skip if REF allele has ambiguous characters
         match *ch as char {
             'A' | 'G' | 'C' | 'T' => (),
             _ => return (original_pos as u64, fields.join("\t")),
@@ -166,9 +166,13 @@ fn normalize_gvcf_record(
         if alt.is_empty() {
             panic!("gvcf_norm: line {} invalid ALT", line_num);
         }
-        let altb = Vec::from(alt.as_bytes())[0] as char;
-        if altb != '<' && altb != '*' && altb != '.' {
-            real_alt = true;
+        for ch in alt.chars() {
+            match ch {
+                '<' | '*' | '.' => break,
+                'A' | 'G' | 'C' | 'T' => real_alt = true,
+                // skip if non-symbolic ALT allele has ambiguous character
+                _ => return (original_pos as u64, fields.join("\t")),
+            }
         }
         alleles.push(Vec::from(alt.as_bytes()));
     }
