@@ -33,10 +33,9 @@ jobs:
         toolchain: stable
         default: true
     - name: build
-      run: cargo build
+      run: cargo build --release
     - name: test
       run: |
-        sudo apt-get install -y samtools tabix
+        sudo apt-get install -y samtools tabix aria2
+        pip3 install gsutil
         prove -v test/*.t
-    - name: build release
-      run: cargo build --release

@@ -136,6 +136,13 @@ fn normalize_gvcf_record(
     if original_pos + alleles[0].len() > chrom_seq.len() {
         panic!("line {} POS & REF beyond end of CHROM {}", line_num, chrom);
     }
+    for ch in alleles[0].iter() {
+        // skip if REF allele has ambiguous characters
+        match *ch as char {
+            'A' | 'G' | 'C' | 'T' => (),
+            _ => return (original_pos as u64, fields.join("\t")),
+        }
+    }
     let ref_seq = &chrom_seq[original_pos..(original_pos + alleles[0].len())];
     if alleles[0] != ref_seq {
         panic!(
