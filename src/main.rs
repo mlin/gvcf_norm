@@ -1,6 +1,6 @@
 use bio::io::fasta;
 use clap::Clap;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 use std::{fs, io};
 
 #[derive(Clap)]
@@ -18,11 +18,11 @@ fn main() {
     let opts = Opts::parse();
 
     if opts.gvcf == "-" && atty::is(atty::Stream::Stdin) {
-        panic!("pipe in data or supply input filename")
+        panic!("gvcf_norm: pipe in data or supply input filename")
     }
 
     let mut ref_genome = fasta::IndexedReader::from_file(&opts.ref_fasta)
-        .expect("unable to open reference genome FASTA/fai");
+        .expect("gvcf_norm: unable to open reference genome FASTA/fai");
 
     let (_, _, _, _, mut last_records) = fold_tsv(
         process_gvcf_line,
@@ -99,11 +99,11 @@ fn process_gvcf_line<'a>(
         chrom_records.clear();
         chrom = String::from(fields[0]);
         ref_fasta.fetch_all(&chrom).expect(&format!(
-            "CHROM {} not found in reference genome FASTA",
+            "gvcf_norm: CHROM {} not found in reference genome FASTA",
             chrom
         ));
         ref_fasta.read(&mut chrom_seq).expect(&format!(
-            "unable to read CHROM {} from reference genome FASTA",
+            "gvcf_norm: unable to read CHROM {} from reference genome FASTA",
             chrom
         ))
     }
@@ -114,9 +114,12 @@ fn process_gvcf_line<'a>(
 
 fn emit(records: &mut Vec<(u64, String)>) {
     // sort records by pos, then write them to standard output
+    // why not just println!()? https://github.com/rust-lang/rust/issues/60673
+    let io_stdout = io::stdout();
+    let mut stdout = io::BufWriter::new(io_stdout);
     records.sort();
     for (_, line) in records.iter() {
-        println!("{}", line)
+        writeln!(stdout, "{}", line).expect("gvcf_norm: unable to write standard output")
     }
 }
 
@@ -131,10 +134,13 @@ fn normalize_gvcf_record(
     let mut alleles = vec![Vec::from(fields[3].as_bytes())];
 
     if alleles[0].is_empty() {
-        panic!("line {} invalid REF", line_num);
+        panic!("gvcf_norm: line {} invalid REF", line_num);
     }
     if original_pos + alleles[0].len() > chrom_seq.len() {
-        panic!("line {} POS & REF beyond end of CHROM {}", line_num, chrom);
+        panic!(
+            "gvcf_norm: line {} POS & REF beyond end of CHROM {}",
+            line_num, chrom
+        );
     }
     for ch in alleles[0].iter() {
         // skip if REF allele has ambiguous characters
@@ -146,7 +152,7 @@ fn normalize_gvcf_record(
     let ref_seq = &chrom_seq[original_pos..(original_pos + alleles[0].len())];
     if alleles[0] != ref_seq {
         panic!(
-            "line {} {}:{} REF {} inconsistent with reference {}",
+            "gvcf_norm: line {} {}:{} REF {} inconsistent with reference {}",
             line_num,
             chrom,
             original_pos + 1,
@@ -158,7 +164,7 @@ fn normalize_gvcf_record(
     let mut real_alt = false;
     for alt in fields[4].split(",") {
         if alt.is_empty() {
-            panic!("line {} invalid ALT", line_num);
+            panic!("gvcf_norm: line {} invalid ALT", line_num);
         }
         let altb = Vec::from(alt.as_bytes())[0] as char;
         if altb != '<' && altb != '*' && altb != '.' {
