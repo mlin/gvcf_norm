@@ -6,11 +6,21 @@ Same algorithm as `vt normalize` and `bcftools norm -f`, but tolerates gVCF's id
 
 Because variant records can be repositioned, *but not* reference bands, a repositioned variant record may end up in the middle of an overlapping reference band, with a small coverage gap between the reference bands. But at least the variant records are normalized.
 
+**Build** 
+
 [![CI](https://github.com/mlin/gvcf_norm/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/mlin/gvcf_norm/actions/workflows/build.yml)
 
-**Build:** `cargo build --release` to build `target/release/gvcf_norm`
+```cargo build --release```
 
-**Usage:** `bgzip -dc my.g.vcf.gz | ./gvcf_norm -r ref_genome.fa - | bgzip -c > my.norm.g.vcf.gz`
+to build `target/release/gvcf_norm`
+
+**Usage**
+
+```bgzip -dc my.g.vcf.gz | ./gvcf_norm -r ref_genome.fa - | bgzip -c > my.norm.g.vcf.gz```
+
+where `ref_genome.fa.fai` is also present (from e.g. `samtools faidx ref_genome.fa`).
+
+Memory requirements: proportional to the uncompressed gVCF text of all records for the largest chromosome, plus the full sequence of the largest chromosome.
 
 ### Example 1
 
