@@ -1,13 +1,12 @@
-use bio::io::fasta;
 use clap::Clap;
 use std::io::{BufRead, Write};
-use std::{fs, io};
+use std::{fs, io, path};
 
 #[derive(Clap)]
 struct Opts {
-    // Reference genome uncompressed FASTA
+    // Reference genome unpacked directory
     #[clap(short, long)]
-    pub ref_fasta: String,
+    pub ref_genome_dir: String,
 
     // Uncompressed gVCF file/pipe [omit or - for standard input]
     #[clap(default_value = "-")]
@@ -21,14 +20,12 @@ fn main() {
         panic!("gvcf_norm: pipe in data or supply input filename")
     }
 
-    let ref_fasta = fasta::IndexedReader::from_file(&opts.ref_fasta)
-        .expect("gvcf_norm: unable to open reference genome FASTA/fai");
-
+    let ref_genome_dir = path::Path::new(&opts.ref_genome_dir);
     let mut state = State {
-        ref_fasta: ref_fasta,
+        ref_genome_dir: &ref_genome_dir,
         header: vec![],
         chrom: String::from(""),
-        chrom_seq: vec![],
+        chrom_mmap: None,
         chrom_records: vec![],
     };
     state = fold_tsv(process_gvcf_line, state, &opts.gvcf).unwrap();
@@ -57,15 +54,15 @@ where
     Ok(x)
 }
 
-struct State {
-    ref_fasta: bio::io::fasta::IndexedReader<fs::File>,
+struct State<'a> {
+    ref_genome_dir: &'a path::Path,
     header: Vec<String>,
     chrom: String,
-    chrom_seq: Vec<u8>,
+    chrom_mmap: Option<(fs::File, memmap::Mmap)>,
     chrom_records: Vec<(u64, String)>,
 }
 
-fn process_gvcf_line(line_num: usize, mut state: State, fields: &Vec<&str>) -> State {
+fn process_gvcf_line<'a>(line_num: usize, mut state: State<'a>, fields: &Vec<&str>) -> State<'a> {
     if !fields.is_empty() && fields[0].chars().next() == Some('#') {
         if state.chrom.len() > 0 {
             panic!("gvcf_norm: out-of-place header line {}", line_num)
@@ -91,19 +88,27 @@ fn process_gvcf_line(line_num: usize, mut state: State, fields: &Vec<&str>) -> S
         emit(&mut state.chrom_records);
         state.chrom_records.clear();
         state.chrom = String::from(fields[0]);
-        state.ref_fasta.fetch_all(&state.chrom).expect(&format!(
-            "gvcf_norm: CHROM {} not found in reference genome FASTA",
-            state.chrom
+        // memory-map the chromosome sequence
+        let chrom_filename = state.ref_genome_dir.join(&state.chrom);
+        let chrom_file = fs::File::open(&chrom_filename).expect(&format!(
+            "gvcf_norm: CHROM {} not found at {}",
+            state.chrom,
+            chrom_filename.to_str().unwrap()
         ));
-        state.ref_fasta.read(&mut state.chrom_seq).expect(&format!(
-            "gvcf_norm: unable to read CHROM {} from reference genome FASTA",
-            state.chrom
-        ))
+        let chrom_mmap = unsafe {
+            memmap::MmapOptions::new().map(&chrom_file).expect(&format!(
+                "gvcf_norm: failed to memory-map {}",
+                chrom_filename.to_str().unwrap()
+            ))
+        };
+        state.chrom_mmap = Some((chrom_file, chrom_mmap));
     }
 
+    let (chrom_file, chrom_mmap) = state.chrom_mmap.unwrap();
     state
         .chrom_records
-        .push(normalize_gvcf_record(line_num, fields, &state.chrom_seq));
+        .push(normalize_gvcf_record(line_num, fields, &chrom_mmap));
+    state.chrom_mmap = Some((chrom_file, chrom_mmap));
     return state;
 }
 
@@ -118,11 +123,7 @@ fn emit(records: &mut Vec<(u64, String)>) {
     }
 }
 
-fn normalize_gvcf_record(
-    line_num: usize,
-    fields: &Vec<&str>,
-    chrom_seq: &Vec<u8>,
-) -> (u64, String) {
+fn normalize_gvcf_record(line_num: usize, fields: &Vec<&str>, chrom_seq: &[u8]) -> (u64, String) {
     // parse gVCF fields
     let chrom = fields[0];
     let original_pos = fields[1].parse::<usize>().unwrap() - 1;

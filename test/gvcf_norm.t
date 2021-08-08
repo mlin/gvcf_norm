@@ -20,7 +20,7 @@ TMPDIR=$(mktemp -d "${TMPDIR}/gvcf_norm_test_XXXXXX")
 export TMPDIR=$(realpath "$TMPDIR")
 
 bgzip -dc test/GRCh38.chr21.fa.gz > "${TMPDIR}/GRCh38.chr21.fa"
-samtools faidx "${TMPDIR}/GRCh38.chr21.fa"
+./unpack_fasta_dir.sh "${TMPDIR}/GRCh38.chr21.fa"
 
 cat << EOF > "${TMPDIR}/ex1.g.vcf"
 ##fileformat=VCFv4.2
@@ -42,7 +42,7 @@ chr21	29848779	.	AT	ATATATTT,T,<*>	40.3	PASS	.	GT:GQ:DP:AD:VAF:PL	1/2:16:32:1,11
 chr21	29848781	.	T	<*>	0	.	END=29848791	GT:GQ:MIN_DP:PL	0/0:50:19:0,57,569
 EOF
 
-$gvcf_norm -r "${TMPDIR}/GRCh38.chr21.fa" "${TMPDIR}/ex1.g.vcf" > "${TMPDIR}/ex1.norm.g.vcf"
+$gvcf_norm -r "${TMPDIR}/GRCh38.chr21.fa.unpack" "${TMPDIR}/ex1.g.vcf" > "${TMPDIR}/ex1.norm.g.vcf"
 is "$?" "0" "ex1 status"
 
 cat "${TMPDIR}/ex1.norm.g.vcf" | tr $'\t' '|' | grep -F 'chr21|29848778|.|TA|TATATATT,T,<*>|40.3|PASS|gvcf_norm_originalPOS=29848779'
@@ -71,7 +71,7 @@ chr21	26193747	.	T	<*>	0	.	END=26193751	GT:GQ:MIN_DP:PL	0/0:50:22:0,66,659
 EOF
 
 bgzip "${TMPDIR}/ex2.g.vcf"
-bgzip -dc "${TMPDIR}/ex2.g.vcf.gz" | $gvcf_norm -r "${TMPDIR}/GRCh38.chr21.fa" - > "${TMPDIR}/ex2.norm.g.vcf"
+bgzip -dc "${TMPDIR}/ex2.g.vcf.gz" | $gvcf_norm -r "${TMPDIR}/GRCh38.chr21.fa.unpack" - > "${TMPDIR}/ex2.norm.g.vcf"
 is "$?" "0" "ex2 status"
 
 cat "${TMPDIR}/ex2.norm.g.vcf" | tr $'\t' '|' | grep -F 'chr21|26193734|.|GTTTTT|G,<*>|29.1|PASS|gvcf_norm_originalPOS=26193741|'
@@ -80,13 +80,13 @@ is "$?" "0" "ex2 correct"
 aria2c -c -d /tmp -s 4 -x 4 --retry-wait 2 \
     ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
 is "$?" "0" "download GRCh38"
-bgzip -dc /tmp/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz > /tmp/GRCh38.fa
-samtools faidx /tmp/GRCh38.fa
+rm -rf /tmp/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz.unpack
+./unpack_fasta_dir.sh /tmp/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz
 
 gsutil -m cp -n gs://brain-genomics-public/research/cohort/1KGP/dv_vcf/v1/NA12878.dv0.8.0.g.vcf.gz /tmp/
 is "$?" "0" "download NA12878.dv0.8.0.g.vcf.gz"
 
-bgzip -dc /tmp/NA12878.dv0.8.0.g.vcf.gz | time $gvcf_norm -r /tmp/GRCh38.fa - > "${TMPDIR}/NA12878.norm.g.vcf"
+bgzip -dc /tmp/NA12878.dv0.8.0.g.vcf.gz | time $gvcf_norm -r /tmp/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz.unpack - > "${TMPDIR}/NA12878.norm.g.vcf"
 is "$?" "0" "normalize NA12878 status"
 
 is "$(grep originalPOS "${TMPDIR}/NA12878.norm.g.vcf" | wc -l)" "1443" "normalize NA12878 correct"
