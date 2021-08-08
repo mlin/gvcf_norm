@@ -21,16 +21,18 @@ fn main() {
         panic!("gvcf_norm: pipe in data or supply input filename")
     }
 
-    let mut ref_genome = fasta::IndexedReader::from_file(&opts.ref_fasta)
+    let ref_fasta = fasta::IndexedReader::from_file(&opts.ref_fasta)
         .expect("gvcf_norm: unable to open reference genome FASTA/fai");
 
-    let (_, _, _, _, mut last_records) = fold_tsv(
-        process_gvcf_line,
-        (&mut ref_genome, vec![], String::from(""), vec![], vec![]),
-        &opts.gvcf,
-    )
-    .unwrap();
-    emit(&mut last_records)
+    let mut state = State {
+        ref_fasta: ref_fasta,
+        header: vec![],
+        chrom: String::from(""),
+        chrom_seq: vec![],
+        chrom_records: vec![],
+    };
+    state = fold_tsv(process_gvcf_line, state, &opts.gvcf).unwrap();
+    emit(&mut state.chrom_records)
 }
 
 /// Fold over tab-separated lines of the file or standard input.
@@ -55,61 +57,54 @@ where
     Ok(x)
 }
 
-fn process_gvcf_line<'a>(
-    line_num: usize,
-    state: (
-        &'a mut bio::io::fasta::IndexedReader<fs::File>,
-        Vec<String>,
-        String,
-        Vec<u8>,
-        Vec<(u64, String)>,
-    ),
-    fields: &Vec<&str>,
-) -> (
-    &'a mut bio::io::fasta::IndexedReader<fs::File>,
-    Vec<String>,
-    String,
-    Vec<u8>,
-    Vec<(u64, String)>,
-) {
-    let (ref_fasta, mut header, mut chrom, mut chrom_seq, mut chrom_records) = state;
+struct State {
+    ref_fasta: bio::io::fasta::IndexedReader<fs::File>,
+    header: Vec<String>,
+    chrom: String,
+    chrom_seq: Vec<u8>,
+    chrom_records: Vec<(u64, String)>,
+}
+
+fn process_gvcf_line(line_num: usize, mut state: State, fields: &Vec<&str>) -> State {
     if !fields.is_empty() && fields[0].chars().next() == Some('#') {
-        if chrom.len() > 0 {
+        if state.chrom.len() > 0 {
             panic!("gvcf_norm: out-of-place header line {}", line_num)
         }
-        header.push(fields.join("\t"));
-        return (ref_fasta, header, chrom, chrom_seq, chrom_records);
-    } else if header.is_empty() {
+        state.header.push(fields.join("\t"));
+        return state;
+    } else if state.header.is_empty() {
         panic!("gvcf_norm: no header found; check input is uncompressed")
     }
     if fields.len() < 10 || fields[0].len() == 0 {
         panic!("gvcf_norm: malformed input line")
     }
-    if fields[0] != chrom {
-        if chrom.len() == 0 {
+    if fields[0] != state.chrom {
+        if state.chrom.len() == 0 {
             // emit header
-            for i in 0..header.len() {
-                if i == header.len() - 1 {
+            for i in 0..state.header.len() {
+                if i == state.header.len() - 1 {
                     println!("##INFO=<ID=gvcf_norm_originalPOS,Number=1,Type=Integer,Description=\"POS before gvcf_norm left-aligned the variant\">");
                 }
-                println!("{}", header[i]);
+                println!("{}", state.header[i]);
             }
         }
-        emit(&mut chrom_records);
-        chrom_records.clear();
-        chrom = String::from(fields[0]);
-        ref_fasta.fetch_all(&chrom).expect(&format!(
+        emit(&mut state.chrom_records);
+        state.chrom_records.clear();
+        state.chrom = String::from(fields[0]);
+        state.ref_fasta.fetch_all(&state.chrom).expect(&format!(
             "gvcf_norm: CHROM {} not found in reference genome FASTA",
-            chrom
+            state.chrom
         ));
-        ref_fasta.read(&mut chrom_seq).expect(&format!(
+        state.ref_fasta.read(&mut state.chrom_seq).expect(&format!(
             "gvcf_norm: unable to read CHROM {} from reference genome FASTA",
-            chrom
+            state.chrom
         ))
     }
 
-    chrom_records.push(normalize_gvcf_record(line_num, fields, &chrom_seq));
-    return (ref_fasta, header, chrom, chrom_seq, chrom_records);
+    state
+        .chrom_records
+        .push(normalize_gvcf_record(line_num, fields, &state.chrom_seq));
+    return state;
 }
 
 fn emit(records: &mut Vec<(u64, String)>) {
