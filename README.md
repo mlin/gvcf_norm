@@ -16,11 +16,11 @@ to build `target/release/gvcf_norm`
 
 **Usage**
 
-```bgzip -dc my.g.vcf.gz | ./gvcf_norm -r ref_genome.fa - | bgzip -c > my.norm.g.vcf.gz```
+```bgzip -dc my.g.vcf.gz | ./gvcf_norm -r /ref/genome/dir/ - | bgzip -c > my.norm.g.vcf.gz```
 
-where `ref_genome.fa.fai` is also present (from e.g. `samtools faidx ref_genome.fa`).
+where `/ref/genome/dir` is a directory with the reference genome sequences, one file per chromosome, with no whitespace (suitable for memory-mapping). Generate this directory from a reference genome FASTA using the [`unpack_fasta_dir.sh`](unpack_fasta_dir.sh) script (depends on [seqkit](https://bioinf.shenwei.me/seqkit/)).
 
-Memory requirements: proportional to the uncompressed gVCF text of all records for the largest chromosome, plus the full sequence of the largest chromosome.
+Memory requirements: proportional to the uncompressed gVCF text of all records for the largest chromosome.
 
 ### Example 1
 

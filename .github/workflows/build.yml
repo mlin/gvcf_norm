@@ -38,4 +38,6 @@ jobs:
       run: |
         sudo apt-get install -y samtools tabix aria2
         pip3 install gsutil
+        curl -Ls https://github.com/shenwei356/seqkit/releases/download/v0.16.1/seqkit_linux_amd64.tar.gz | tar zx
+        mv seqkit /usr/local/bin
         prove -v test/*.t
