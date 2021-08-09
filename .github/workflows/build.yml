@@ -32,6 +32,8 @@ jobs:
       with:
         toolchain: stable
         default: true
+    - name: build environment
+      run: echo 'RUSTFLAGS=-C target-cpu=ivybridge' >> $GITHUB_ENV
     - name: build
       run: cargo build --release
     - name: test
@@ -41,3 +43,11 @@ jobs:
         curl -Ls https://github.com/shenwei356/seqkit/releases/download/v0.16.1/seqkit_linux_amd64.tar.gz | tar zx
         mv seqkit /usr/local/bin
         prove -v test/*.t
+    - name: digest
+      run: |
+        mv target/release/gvcf_norm .
+        sha256sum gvcf_norm
+    - uses: actions/upload-artifact@v2
+      with:
+        name: gvcf_norm
+        path: gvcf_norm
