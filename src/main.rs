@@ -59,7 +59,8 @@ struct State<'a> {
     header: Vec<String>,
     chrom: String,
     chrom_mmap: Option<(fs::File, memmap::Mmap)>,
-    chrom_records: Vec<(u64, String)>,
+    // (POS, line)
+    chrom_records: Vec<(u64, Vec<u8>)>,
 }
 
 fn process_gvcf_line<'a>(line_num: usize, mut state: State<'a>, fields: &Vec<&str>) -> State<'a> {
@@ -105,21 +106,25 @@ fn process_gvcf_line<'a>(line_num: usize, mut state: State<'a>, fields: &Vec<&st
     }
 
     let (chrom_file, chrom_mmap) = state.chrom_mmap.unwrap();
+    let (norm_pos, mut norm_record) = normalize_gvcf_record(line_num, fields, &chrom_mmap);
+    norm_record += "\n";
     state
         .chrom_records
-        .push(normalize_gvcf_record(line_num, fields, &chrom_mmap));
+        .push((norm_pos, norm_record.into_bytes()));
     state.chrom_mmap = Some((chrom_file, chrom_mmap));
     return state;
 }
 
-fn emit(records: &mut Vec<(u64, String)>) {
+fn emit(records: &mut Vec<(u64, Vec<u8>)>) {
     // sort records by pos, then write them to standard output
-    // why not just println!()? https://github.com/rust-lang/rust/issues/60673
     records.sort();
     let io_stdout = io::stdout();
     let mut stdout = io::BufWriter::new(io_stdout);
     for (_, line) in records.iter() {
-        writeln!(stdout, "{}", line).expect("gvcf_norm: unable to write standard output")
+        // why not just println!()? https://github.com/rust-lang/rust/issues/60673
+        stdout
+            .write(&line)
+            .expect("gvcf_norm: unable to write standard output");
     }
 }
 
