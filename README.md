@@ -2,6 +2,8 @@
 
 **Command-line tool for [left-aligning and normalizing](https://genome.sph.umich.edu/wiki/Variant_Normalization#Algorithm_for_Normalization) gVCF variants**
 
+**NOTICE: [DeepVariant v1.3.0+](https://github.com/google/deepvariant/releases/tag/v1.3.0) has a built-in option `--normalize-reads` to ensure indel left-alignment, replacing this utility**
+
 Same algorithm as `vt normalize` and `bcftools norm -f`, but tolerates gVCF's idioms: (i) ignores any symbolic alleles in variant records (`<NON_REF>`, `<*>`, `*`), and (ii) passes through reference bands unchanged.
 
 Because variant records can be repositioned, *but not* reference bands, a repositioned variant record may end up in the middle of an overlapping reference band, with a small coverage gap between the reference bands. But at least the variant records are normalized.
