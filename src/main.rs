@@ -1,15 +1,15 @@
-use clap::Clap;
+use clap::Parser;
 use std::io::{BufRead, Write};
 use std::{fs, io, path};
 
-#[derive(Clap)]
+#[derive(Parser)]
 struct Opts {
     // Reference genome unpacked directory
-    #[clap(short, long)]
+    #[arg(short, long)]
     pub ref_genome_dir: String,
 
     // Uncompressed gVCF file/pipe [omit or - for standard input]
-    #[clap(default_value = "-")]
+    #[arg(default_value = "-")]
     pub gvcf: String,
 }
 
